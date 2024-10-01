@@ -67,13 +67,34 @@ class MonteCarloPrediction(ModelFreePrediction):
         """
         super().__init__(grid_world,policy, discount_factor, max_episode, seed)
 
+
     def run(self) -> None:
         """Run the algorithm until max_episode"""
         # TODO: Update self.values with first-visit Monte-Carlo method
         current_state = self.grid_world.reset()
+        returns = {state: [] for state in range(self.state_space)}
         while self.episode_counter < self.max_episode:
-            next_state, reward, done = self.collect_data()
-            continue
+            episode = []
+            done = False
+            while not done:
+                next_state, reward, done = self.collect_data()
+                episode.append((current_state, reward)) 
+                current_state = next_state  
+            
+            G = 0 
+            visited_states = set()  
+            G_t = np.zeros(len(episode))
+            for t in reversed(range(len(episode))):
+                state, reward = episode[t]
+                G = reward + self.discount_factor * G 
+                G_t[t] = G
+            for t in range(len(episode)):
+                state, reward = episode[t]
+                if state not in visited_states:
+                    visited_states.add(state)
+                    returns[state].append(G_t[t])  
+                    self.values[state] = np.mean(returns[state]) 
+            
 
 
 class TDPrediction(ModelFreePrediction):
@@ -96,8 +117,15 @@ class TDPrediction(ModelFreePrediction):
         # TODO: Update self.values with TD(0) Algorithm
         current_state = self.grid_world.reset()
         while self.episode_counter < self.max_episode:
-            next_state, reward, done = self.collect_data()
-            continue
+            done = False
+            while not done:
+                next_state, reward, done = self.collect_data()
+                td_target = reward + self.discount_factor * self.values[next_state] 
+                if done:
+                    td_target = reward
+                td_error = td_target - self.values[current_state]  
+                self.values[current_state] += self.lr * td_error  
+                current_state = next_state
 
 
 class NstepTDPrediction(ModelFreePrediction):
@@ -122,8 +150,45 @@ class NstepTDPrediction(ModelFreePrediction):
         # TODO: Update self.values with N-step TD Algorithm
         current_state = self.grid_world.reset()
         while self.episode_counter < self.max_episode:
-            next_state, reward, done = self.collect_data()
-            continue
+            done = False
+            # Initialize the state, reward, and next_state buffers for n-step TD updates
+            state_buffer = []  # Buffer to store states
+            reward_buffer = []  # Buffer to store rewards
+            
+            # Interact with the environment
+            while not done:
+                # Collect data: current state, reward, and next state
+                next_state, reward, done = self.collect_data()
+                
+                # Append the current state and reward to the buffers
+                state_buffer.append(current_state)
+                reward_buffer.append(reward)
+                
+                # If we have more than n states in the buffer, we can start updating the value function
+                if len(state_buffer) >= self.n:
+                    G = 0
+                    for i in range(self.n):
+                        G += (self.discount_factor ** i) * reward_buffer[i]
+                    if not done: 
+                        G += (self.discount_factor ** self.n) * self.values[next_state]  
+                    td_error = G - self.values[state_buffer[0]]
+                    self.values[state_buffer[0]] += self.lr * td_error
+                    state_buffer.pop(0)
+                    reward_buffer.pop(0)
+                current_state = next_state
+
+            while len(state_buffer) > 0:
+                G = 0
+                for i in range(len(reward_buffer)):
+                    G += (self.discount_factor ** i) * reward_buffer[i]
+                td_error = G - self.values[state_buffer[0]]
+                self.values[state_buffer[0]] += self.lr * td_error
+                state_buffer.pop(0)
+                reward_buffer.pop(0)
+
+
+
+
 
 # =========================== 2.2 model free control ===========================
 class ModelFreeControl:
@@ -181,15 +246,35 @@ class MonteCarloPolicyIteration(ModelFreeControl):
     def policy_evaluation(self, state_trace, action_trace, reward_trace) -> None:
         """Evaluate the policy and update the values after one episode"""
         # TODO: Evaluate state value for each Q(s,a)
-        
-        raise NotImplementedError
+        # returns = {}
+        # for state in range(self.state_space):
+        #     for action in range(self.action_space):
+        #         returns[(state, action)] = []
+
+        G = 0 
+        for t in reversed(range(len(state_trace))):
+            state = state_trace[t]
+            action = action_trace[t]
+            reward = reward_trace[t]
+            if len(state_trace) > 1:
+                state_trace.pop()
+            action_trace.pop()
+            reward_trace.pop()
+
+            G = reward + self.discount_factor * G  
+            # returns[(state, action)].append(G)
+            self.q_values[state, action] += self.lr * (G - self.q_values[state, action]) 
+            # np.mean(returns[(state, action)])
         
 
     def policy_improvement(self) -> None:
         """Improve policy based on Q(s,a) after one episode"""
         # TODO: Improve the policy
-
-        raise NotImplementedError
+        for state in range(self.state_space):
+            action_probabilities = np.ones(self.action_space) * (self.epsilon / self.action_space)
+            best_action = np.argmax(self.q_values[state])
+            action_probabilities[best_action] += (1.0 - self.epsilon)
+            self.policy[state] = action_probabilities
 
 
     def run(self, max_episode=1000) -> None:
@@ -203,8 +288,31 @@ class MonteCarloPolicyIteration(ModelFreeControl):
         while iter_episode < max_episode:
             # TODO: write your code here
             # hint: self.grid_world.reset() is NOT needed here
-            
-            raise NotImplementedError
+            state_trace   = [current_state]
+            action_trace  = []
+            reward_trace  = []
+            # Generate one episode
+            done = False
+            while not done:
+                
+                action_probs = self.policy[current_state]
+                # rng = np.random.default_rng(1) 
+                action = np.random.choice(self.action_space, p=action_probs)
+                next_state, reward, done = self.grid_world.step(action)
+                # Store the trajectory
+                if len(state_trace) > 1:
+                    state_trace.append(current_state)
+                action_trace.append(action)
+                reward_trace.append(reward)
+
+                current_state = next_state
+            print(iter_episode)
+            print('action_trace',len(action_trace))
+            # Evaluate the policy by updating Q-values using Every-Visit Monte Carlo
+            self.policy_evaluation(state_trace, action_trace, reward_trace)
+            # Improve the policy using epsilon-greedy improvement
+            self.policy_improvement()
+            iter_episode += 1
 
 
 class SARSA(ModelFreeControl):
