@@ -1,7 +1,7 @@
 import numpy as np
 import json
 from collections import deque
-
+import time # revise
 from gridworld import GridWorld
 
 # =========================== 2.1 model free prediction ===========================
@@ -246,40 +246,42 @@ class MonteCarloPolicyIteration(ModelFreeControl):
     def policy_evaluation(self, state_trace, action_trace, reward_trace) -> None:
         """Evaluate the policy and update the values after one episode"""
         # TODO: Evaluate state value for each Q(s,a)
-        # returns = {}
-        # for state in range(self.state_space):
-        #     for action in range(self.action_space):
-        #         returns[(state, action)] = []
 
         G = 0 
-        for t in reversed(range(len(state_trace))):
+        for t in reversed(range(len(action_trace))):
             state = state_trace[t]
             action = action_trace[t]
             reward = reward_trace[t]
-            if len(state_trace) > 1:
-                state_trace.pop()
-            action_trace.pop()
-            reward_trace.pop()
-
             G = reward + self.discount_factor * G  
-            # returns[(state, action)].append(G)
             self.q_values[state, action] += self.lr * (G - self.q_values[state, action]) 
-            # np.mean(returns[(state, action)])
         
 
     def policy_improvement(self) -> None:
         """Improve policy based on Q(s,a) after one episode"""
         # TODO: Improve the policy
+        policy_indices = self.get_policy_index()
+    
+        # Iterate over all states and update the policy
         for state in range(self.state_space):
             action_probabilities = np.ones(self.action_space) * (self.epsilon / self.action_space)
-            best_action = np.argmax(self.q_values[state])
+            best_action = policy_indices[state]
             action_probabilities[best_action] += (1.0 - self.epsilon)
             self.policy[state] = action_probabilities
 
+        # # Update the policy for the current state
+        # 
+        # for state in range(self.state_space):
+        #     action_probabilities = np.ones(self.action_space) * (self.epsilon / self.action_space)
+        #     best_action = np.argmax(self.q_values[state])
+        #     action_probabilities[best_action] += (1.0 - self.epsilon)
+        #     self.policy[state] = action_probabilities
 
-    def run(self, max_episode=1000) -> None:
+
+    def run(self, max_episode=1000) -> None: ### im main function , it is 512000 iterations... 
         """Run the algorithm until convergence."""
         # TODO: Implement the Monte Carlo policy evaluation with epsilon-greedy
+        start_time = time.time()
+
         iter_episode = 0
         current_state = self.grid_world.reset()
         state_trace   = [current_state]
@@ -288,6 +290,7 @@ class MonteCarloPolicyIteration(ModelFreeControl):
         while iter_episode < max_episode:
             # TODO: write your code here
             # hint: self.grid_world.reset() is NOT needed here
+            print('current state: ',current_state)
             state_trace   = [current_state]
             action_trace  = []
             reward_trace  = []
@@ -296,16 +299,13 @@ class MonteCarloPolicyIteration(ModelFreeControl):
             while not done:
                 
                 action_probs = self.policy[current_state]
-                # rng = np.random.default_rng(1) 
                 action = np.random.choice(self.action_space, p=action_probs)
                 next_state, reward, done = self.grid_world.step(action)
-                # Store the trajectory
-                if len(state_trace) > 1:
-                    state_trace.append(current_state)
+                current_state = next_state
+                state_trace.append(current_state)
                 action_trace.append(action)
                 reward_trace.append(reward)
-
-                current_state = next_state
+                
             print(iter_episode)
             print('action_trace',len(action_trace))
             # Evaluate the policy by updating Q-values using Every-Visit Monte Carlo
@@ -313,7 +313,9 @@ class MonteCarloPolicyIteration(ModelFreeControl):
             # Improve the policy using epsilon-greedy improvement
             self.policy_improvement()
             iter_episode += 1
-
+        end_time = time.time()  # Stop the timer
+        total_time = end_time - start_time  # Calculate total running time
+        print(f"Total running time: {total_time:.2f} seconds")
 
 class SARSA(ModelFreeControl):
     def __init__(
