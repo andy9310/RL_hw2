@@ -3,7 +3,7 @@ import json
 from collections import deque
 import time # revise
 from gridworld import GridWorld
-
+import random
 # =========================== 2.1 model free prediction ===========================
 class ModelFreePrediction:
     """
@@ -290,7 +290,7 @@ class MonteCarloPolicyIteration(ModelFreeControl):
         while iter_episode < max_episode:
             # TODO: write your code here
             # hint: self.grid_world.reset() is NOT needed here
-            print('current state: ',current_state)
+            # print('current state: ',current_state)
             state_trace   = [current_state]
             action_trace  = []
             reward_trace  = []
@@ -306,8 +306,8 @@ class MonteCarloPolicyIteration(ModelFreeControl):
                 action_trace.append(action)
                 reward_trace.append(reward)
                 
-            print(iter_episode)
-            print('action_trace',len(action_trace))
+            # print(iter_episode)
+            # print('action_trace',len(action_trace))
             # Evaluate the policy by updating Q-values using Every-Visit Monte Carlo
             self.policy_evaluation(state_trace, action_trace, reward_trace)
             # Improve the policy using epsilon-greedy improvement
@@ -422,30 +422,68 @@ class Q_Learning(ModelFreeControl):
 
     def add_buffer(self, s, a, r, s2, d) -> None:
         # TODO: add new transition to buffer
-        raise NotImplementedError
+        self.buffer.append((s, a, r, s2, d))
+        # raise NotImplementedError
 
     def sample_batch(self) -> np.ndarray:
         # TODO: sample a batch of index of transitions from the buffer
-        raise NotImplementedError
+        batch_size = min(self.sample_batch_size, len(self.buffer))
+        batch = random.sample(self.buffer, batch_size)
+        return batch
+        # raise NotImplementedError
 
     def policy_eval_improve(self, s, a, r, s2, is_done) -> None:
         """Evaluate the policy and update the values after one step"""
         #TODO: Evaluate Q value after one step and improve the policy
-        raise NotImplementedError
+        
+        if is_done:
+            target = r
+        else:
+            max_array = self.get_max_state_values()
+            target = r + self.discount_factor * max_array[s2]
+        td_error = target - self.q_values[s, a]
+        self.q_values[s, a] += self.lr * td_error
+        # Update the policy for state s using epsilon-greedy
+        policy_indices = self.get_policy_index()    
+        best_action = policy_indices[s]
+        action_probabilities = np.ones(self.action_space) * (self.epsilon / self.action_space)
+        action_probabilities[best_action] += (1.0 - self.epsilon)
+        self.policy[s] = action_probabilities
+        # raise NotImplementedError
 
     def run(self, max_episode=1000) -> None:
         """Run the algorithm until convergence."""
         # TODO: Implement the Q_Learning algorithm
+        start_time = time.time()
         iter_episode = 0
         current_state = self.grid_world.reset()
         prev_s = None
         prev_a = None
         prev_r = None
-        is_done = False
+        
         transition_count = 0
         while iter_episode < max_episode:
             # TODO: write your code here
             # hint: self.grid_world.reset() is NOT needed here
+            
+            is_done = False
+            while not is_done:
+                action_probs = self.policy[current_state]
+                action = np.random.choice(self.action_space, p=action_probs)
+                next_state, reward, is_done = self.grid_world.step(action)
+                # Add transition to replay buffer
+                self.add_buffer(current_state, action, reward, next_state, is_done)
+                transition_count += 1
 
-            raise NotImplementedError
+                # Every update_frequency steps, sample a batch and update Q-values
+                if transition_count % self.update_frequency == 0:
+                    batch = self.sample_batch()
+                    for s, a, r, s2, done in batch:
+                        self.policy_eval_improve(s, a, r, s2, done)
+                current_state = next_state
+            iter_episode += 1
+            # print('iter:',iter_episode)
+        end_time = time.time()  # Stop the timer
+        total_time = end_time - start_time  # Calculate total running time
+        print(f"Total running time: {total_time:.2f} seconds")
             
