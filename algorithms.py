@@ -335,23 +335,72 @@ class SARSA(ModelFreeControl):
     def policy_eval_improve(self, s, a, r, s2, a2, is_done) -> None:
         """Evaluate the policy and update the values after one step"""
         # TODO: Evaluate Q value after one step and improve the policy
+        # Evaluate Q value after one step and improve the policy using TD(0)
+        target = 0
+        if is_done:
+            target = r  # If the episode is done, there is no future reward
+        else:
+            target = r + self.discount_factor * self.q_values[s2, a2]
         
-        raise NotImplementedError
+        td_error = target - self.q_values[s, a]
+        self.q_values[s, a] += self.lr * td_error
+
+        # Improve the policy at state s using epsilon-greedy
+
+        policy_indices = self.get_policy_index()    
+        best_action = policy_indices[s]
+        action_probabilities = np.ones(self.action_space) * (self.epsilon / self.action_space)
+        action_probabilities[best_action] += (1.0 - self.epsilon)
+        self.policy[s] = action_probabilities
+
+        # raise NotImplementedError
 
     def run(self, max_episode=1000) -> None:
         """Run the algorithm until convergence."""
         # TODO: Implement the TD policy evaluation with epsilon-greedy
+        start_time = time.time()
         iter_episode = 0
         current_state = self.grid_world.reset()
-        prev_s = None
-        prev_a = None
-        prev_r = None
-        is_done = False
         while iter_episode < max_episode:
             # TODO: write your code here
             # hint: self.grid_world.reset() is NOT needed here
-            
-            raise NotImplementedError
+            # print('current_state:', current_state)
+            prev_s = None
+            prev_a = None
+            prev_r = None
+            action_probs = self.policy[current_state]
+            action = np.random.choice(self.action_space, p=action_probs)
+            done = False
+            while not done:
+                # Take action, observe reward and next state
+                next_state, reward, done = self.grid_world.step(action)
+                # if done:
+                #     print('prev of done state:', current_state) # must be 21
+                #     print('after final state', reward)
+                #     print('done state:', next_state)
+                prev_a = action
+                prev_r = reward
+                prev_s = current_state
+                # Choose next action using the current policy (epsilon-greedy)
+                if not done:
+                    next_action_probs = self.policy[next_state]
+                    next_action = np.random.choice(self.action_space, p=next_action_probs)
+                else:
+                    next_action = None
+
+                current_state = next_state
+                action = next_action
+
+                # Update Q-values and policy
+                self.policy_eval_improve(prev_s, prev_a, prev_r, current_state, action, done)
+
+            iter_episode += 1
+
+            # print('end of loop: ',current_state)
+        end_time = time.time()  # Stop the timer
+        total_time = end_time - start_time  # Calculate total running time
+        print(f"Total running time: {total_time:.2f} seconds")
+            # raise NotImplementedError
 
 class Q_Learning(ModelFreeControl):
     def __init__(
